@@ -1,0 +1,83 @@
+{% extends 'flask-admin-profiler/base.html' %}
+{% import 'flask-admin-profiler/memory/lib.html' as lib %}
+
+{% block body %}
+{{ lib.nav('overview') }}
+
+<h2>Inspecting <i>{{ obj_id }}</i> ({{ obj_type }})</h2>
+
+<hr>
+<h3>Object representation</h3>
+<pre class="long-text">{{ obj_text }}</pre>
+
+{% if attrs %}
+<hr>
+<h3>Attributes</h3>
+
+<table class="table table-striped">
+    <tr>
+        <th>Name</th>
+        <th>Value</th>
+    </tr>
+    {% for name, value in attrs %}
+    <tr>
+        <td>
+            {{ name }}
+        </td>
+        <td>
+            {{ value }}
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
+
+<hr>
+<h3>Backrefs</h3>
+
+<table class="table table-striped">
+    <tr>
+        <th>ID</th>
+        <th>Value</th>
+    </tr>
+    {% for name, obj in referrers %}
+    <tr>
+        <td>
+            <a href="{{ url_for('.inspect', id=format_id(obj)) }}">{{ format_id(obj) }}</a>
+        </td>
+        <td>
+            {{ name }}
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+<div class="graph">
+    <img src="{{ url_for('.backref_graph', id=obj_id) }}" />
+</div>
+
+<hr>
+<h3>Refs</h3>
+
+<table class="table table-striped">
+    <tr>
+        <th>ID</th>
+        <th>Value</th>
+    </tr>
+    {% for name, obj in referrents %}
+    <tr>
+        <td>
+            <a href="{{ url_for('.inspect', id=format_id(obj)) }}">{{ format_id(obj) }}</a>
+        </td>
+        <td>
+            {{ name }}
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+<div class="graph">
+    <img src="{{ url_for('.ref_graph', id=obj_id) }}" />
+</div>
+
+{% endblock %}

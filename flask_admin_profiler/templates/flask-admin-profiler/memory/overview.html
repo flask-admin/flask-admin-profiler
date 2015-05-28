@@ -1,0 +1,21 @@
+{% extends 'flask-admin-profiler/base.html' %}
+{% import 'flask-admin-profiler/memory/lib.html' as lib %}
+
+{% block body %}
+{{ lib.nav('overview') }}
+
+<table class="table table-striped">
+    <tr>
+        <th>Type Name</th>
+        <th>Object Count</th>
+    </tr>
+    {% for name, count in common_types %}
+    <tr>
+        <td>{{ name }}</td>
+        <td>
+            <a href="{{ url_for('.objects', type=name) }}">{{ count }}</a>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

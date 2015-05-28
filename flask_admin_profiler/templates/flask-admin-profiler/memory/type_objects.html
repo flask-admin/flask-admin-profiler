@@ -1,0 +1,32 @@
+{% extends 'flask-admin-profiler/base.html' %}
+{% import 'flask-admin-profiler/memory/lib.html' as mem_lib %}
+{% import 'admin/lib.html' as admin_lib %}
+
+{% block body %}
+{{ mem_lib.nav('overview') }}
+
+<h2>Objects of <i>{{ obj_type }}</i> type</h2>
+
+<table class="table table-striped">
+    <tr>
+        <th>
+            <a href="{{ generate_sort_url(0) }}">ID</a>
+        </th>
+        <th>
+            <a href="{{ generate_sort_url(1) }}">Representation</a>
+        </th>
+    </tr>
+    {% for id, name in objects %}
+    <tr>
+        <td>
+            <a href="{{ url_for('.inspect', id=id) }}">{{ id }}</a>
+        </td>
+        <td>
+            {{ name }}
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+{{ admin_lib.pager(page, pages, generate_pager_url) }}
+{% endblock %}

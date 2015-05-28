@@ -1,0 +1,10 @@
+{% macro nav(name) %}
+<ul class="nav nav-tabs">
+    <li{% if name == 'overview' %} class="active"{% endif %}>
+        <a href="{{ url_for('.overview') }}">Overview</a>
+    </li>
+    <li{% if name == 'leaks' %} class="active"{% endif %}>
+        <a href="{{ url_for('.leaks') }}">Leaks</a>
+    </li>
+</ul>
+{% endmacro %}

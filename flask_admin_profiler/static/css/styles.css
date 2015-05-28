@@ -1,0 +1,15 @@
+.long-text {
+    max-height: 2em;
+    overflow-x: scroll;
+    overflow-y: hidden;
+    cursor: pointer;
+}
+
+.show-all {
+    max-height: inherit;
+}
+
+.graph {
+    overflow: auto;
+    text-align: center;
+}
