@@ -14,14 +14,14 @@
         <th>Object Count</th>
         <th>Difference</th>
     </tr>
-    {% for name, count, difference in leaks %}
+    {% for name, difference, num_objects in leaks %}
     <tr>
         <td>{{ name }}</td>
         <td>
-            <a href="{{ url_for('.objects', type=name) }}">{{ count }}</a>
+            <a href="{{ url_for('.objects', type=name) }}">{{ num_objects }}</a>
         </td>
         <td>
-            +{{ difference }}
+            <a href="{{ url_for('.leaked_objects', type=name)}}">+{{ difference }}</a>
         </td>
     </tr>
     {% endfor %}

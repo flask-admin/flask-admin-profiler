@@ -1,5 +1,8 @@
 import objgraph
 import subprocess
+import gc
+from itertools import chain
+from collections import defaultdict
 from cStringIO import StringIO
 
 from flask import request, redirect, url_for, Response
@@ -24,11 +27,56 @@ class MemoryProfiler(base.ProfilerBaseView):
         self.dot_path = 'dot'
 
         self._curr_stats = {}
-        self._stat_difference = {}
+        self._stat_difference = []
+        self._obj_difference = {}
 
     # Helpers
     def get_repr(self, obj, limit=250):
         return tools.get_repr(obj, limit=limit)
+
+    def _pager(self, data_fn, endpoint, **kwargs):
+        # Figure out sorting
+        sort_field = request.args.get('sort', type=int, default=0)
+        sort_dir = bool(request.args.get('dir', type=int, default=0))
+
+        if sort_field < 0 or sort_field > 1:
+            sort_field = 0
+
+        # Figure out paging
+        page = request.args.get('page', type=int, default=0)
+        if page < 0:
+            page = 0
+
+        data = data_fn()
+
+        sorted_objects = sorted(data, key=lambda v: v[sort_field], reverse=sort_dir)
+
+        subset = sorted_objects[page * self.PAGE_SIZE:page * self.PAGE_SIZE + self.PAGE_SIZE]
+
+        pages = len(data) / self.PAGE_SIZE
+
+        # Helpers
+        def generate_sort_url(field):
+            new_dir = 0
+
+            if field == sort_field:
+                new_dir = 0 if sort_dir else 1
+            else:
+                new_dir = 0
+
+            return url_for(endpoint, sort=field, dir=new_dir, page=page, **kwargs)
+
+        def generate_pager_url(page):
+            return url_for(endpoint, sort=sort_field, dir=sort_dir, page=page, **kwargs)
+
+        # Final result
+        return {
+            'data': subset,
+            'page': page,
+            'pages': pages,
+            'generate_sort_url': generate_sort_url,
+            'generate_pager_url': generate_pager_url
+        }
 
     # Views
     @expose()
@@ -45,60 +93,14 @@ class MemoryProfiler(base.ProfilerBaseView):
         if not obj_type:
             return redirect(url_for('.overview'))
 
-        # Figure out sorting
-        sort_field = request.args.get('sort', type=int, default=0)
-        sort_dir = bool(request.args.get('dir', type=int, default=0))
+        def get_data():
+            return [(id(obj), self.get_repr(obj)) for obj in objgraph.by_type(obj_type)]
 
-        if sort_field < 0 or sort_field > 1:
-            sort_field = 0
+        subset = self._pager(get_data, '.objects', type=obj_type)
 
-        # Figure out paging
-        page = request.args.get('page', type=int, default=0)
-        if page < 0:
-            page = 0
-
-        # Helpers
-        def generate_sort_url(field):
-            new_dir = 0
-
-            if field == sort_field:
-                new_dir = 0 if sort_dir else 1
-            else:
-                new_dir = 0
-
-            return url_for('.objects', type=obj_type, sort=field, dir=new_dir, page=page)
-
-        def generate_pager_url(page):
-            return url_for('.objects', type=obj_type, sort=sort_field, dir=sort_dir, page=page)
-
-        # Get data
-        objects = objgraph.by_type(obj_type)
-
-        if sort_field == 0:
-            # Just performance optimization - no need to format all objects if we're sorting by ID
-            sorted_ids = sorted([id(obj) for obj in objects], reverse=sort_dir)
-
-            raw_subset = sorted_ids[page * self.PAGE_SIZE:page * self.PAGE_SIZE + self.PAGE_SIZE]
-
-            subset = [(obj_id, self.get_repr(objgraph.at(obj_id), limit=250)) for obj_id in raw_subset]
-        else:
-            sorted_objects = sorted([(id(obj), self.get_repr(obj, limit=250)) for obj in objects],
-                                    key=lambda v: v[sort_field],
-                                    reverse=sort_dir)
-
-            subset = sorted_objects[page * self.PAGE_SIZE:page * self.PAGE_SIZE + self.PAGE_SIZE]
-
-        pages = len(objects) / self.PAGE_SIZE
-
-        # Render everything
         return self.render('flask-admin-profiler/memory/type_objects.html',
                            obj_type=obj_type,
-                           objects=subset,
-                           page=page,
-                           pages=pages,
-                           # Helpers
-                           generate_sort_url=generate_sort_url,
-                           generate_pager_url=generate_pager_url)
+                           **subset)
 
     # Single object
     def _get_request_object(self):
@@ -186,33 +188,58 @@ class MemoryProfiler(base.ProfilerBaseView):
         return self._render_ref_graph(objs)
 
     # Leak manager
+    def _capture_stats(self):
+        # Prepare and garbage-collect
+        self._stat_difference = []
+        self._obj_difference = {}
+
+        prev_stats = self._curr_stats
+        self._curr_stats = defaultdict(set)
+
+        # Collect object IDs
+        gc.collect()
+
+        for obj in gc.get_objects():
+            self._curr_stats[tools.get_type(obj)].add(id(obj))
+
+        # Capture difference
+        for type_name, type_objects in self._curr_stats.iteritems():
+            if type_name not in prev_stats:
+                self._stat_difference.append((type_name, len(type_objects), len(type_objects)))
+
+                self._obj_difference[type_name] = type_objects
+            else:
+                old_objs = prev_stats[type_name]
+
+                if len(type_objects) > len(old_objs):
+                    new_objects = type_objects - old_objs
+
+                    self._stat_difference.append((type_name, len(new_objects), len(type_objects)))
+                    self._obj_difference[type_name] = new_objects
+
+        self._stat_difference = sorted(self._stat_difference, key=lambda v: v[1], reverse=True)
+
     @expose('/leaks/', methods=('GET', 'POST'))
     def leaks(self):
         if request.method == 'POST':
-            all_objects = objgraph.most_common_types(limit=None)
-
-            prev_stats = self._curr_stats
-            self._curr_stats = {k: v for k, v in all_objects}
-
-            # Remove data from prev_stats
-            if 'dict' in self._curr_stats:
-                self._curr_stats['dict'] -= 1
-
-            if 'tuple' in self._curr_stats:
-                self._curr_stats['tuple'] -= len(prev_stats)
-
-            # Calculate difference
-            self._stat_difference = []
-
-            if prev_stats:
-                for k, v in self._curr_stats.iteritems():
-                    if k not in prev_stats:
-                        self._stat_difference.append((k, v, v))
-                    else:
-                        if v > prev_stats[k]:
-                            self._stat_difference.append((k, v, v - prev_stats[k]))
-
-                self._stat_difference = sorted(self._stat_difference, key=lambda v: -v[2])
+            self._capture_stats()
 
         return self.render('flask-admin-profiler/memory/leaks.html',
                            leaks=self._stat_difference)
+
+    @expose('/leak-objects/')
+    def leaked_objects(self):
+        obj_type = request.args.get('type')
+
+        if not obj_type or obj_type not in self._obj_difference:
+            return redirect(url_for('.leaks'))
+
+        def get_data():
+            objs = tools.get_objects_by_id(self._obj_difference[obj_type])
+            return [(id(obj), self.get_repr(obj)) for obj in objs]
+
+        subset = self._pager(get_data, '.leaked_objects', type=obj_type)
+
+        return self.render('flask-admin-profiler/memory/leaked_objects.html',
+                           obj_type=obj_type,
+                           **subset)

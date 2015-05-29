@@ -1,6 +1,7 @@
 import types
 import inspect
 import pprint
+import gc
 
 
 IGNORED_ATTRS = set(('__doc__', '__class__', '__hash__', '__new__', '__subclasshook__', '__all__', '__builtins__'))
@@ -119,3 +120,8 @@ def get_public_attrs(obj):
         attrs.append((name, get_repr(val)))
 
     return attrs
+
+
+# Get objects
+def get_objects_by_id(ids):
+    return [obj for obj in gc.get_objects() if id(obj) in ids]
